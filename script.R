@@ -1,254 +1,387 @@
-#############################################################
-## -	load data into r (jatos | lab.js output)
-#############################################################
+###################################################################################################
+# FOR EVERYBODY: LOAD DATA FROM JATOS INTO R
+###################################################################################################
 
-# # Install the pacman package (this only needs to be done once!)
-# install.packages("pacman")
-# 
-# # Install/load all other necessary packages
-# pacman::p_load("tidyverse", "jsonlite")
+# Install the pacman package (this only needs to be done once!)
+install.packages("pacman")
 
-# Install missing packages
-renv::restore(prompt = FALSE)
-
-# Load packages
-library(tidyverse)
-library(jsonlite)
+# Install/load all other necessary packages (this may take a while when run for the first time)
+pacman::p_load("jsonlite", "afex", "emmeans", "ltm", "tidyverse", "magrittr", "psych")
 
 # Read the text file from JATOS ...
-read_file("jatos_results_20201023124324") %>%
+#read_file("stuff/jatos_results_20201102154453") %>%
+#read_file("stuff/jatos_results_20201023124324") %>%
+read_file("jatos_results") %>%
   # ... split it into rows ...
   str_split("\n") %>% first() %>%
   # ... filter empty rows ...
   discard(function(x) x == "") %>%
-  # ... parse JSON into a data.frame
-  map_dfr(fromJSON, flatten = TRUE) -> data_raw
+  # ... parse JSON into a data.frame ...
+  map_dfr(fromJSON, flatten = TRUE) %>%
+  # ... and convert to tibble (just a kind of pretty dataframe)
+  as_tibble() -> data_raw
 
-##############################################################
-# Excercises
-#############################################################
+###################################################################################################
+# EXERCISE 1: Data Quality Check Group
+###################################################################################################
 
-##############################################################
-# Excercise 1: Data Quality Check Group [done!]
-#############################################################
-
-#############################################################
-## -	How long did it take participants to complete the task?
-#############################################################
+###############################################################################
+## -  How long did it take participants to complete the task?
+###############################################################################
 
 # Retrieve the end time of the "End of task" event (i.e. the end of the actual experiment)
 time_end <- data_raw %>% filter(sender == "End of Task") %>% pull(time_end)
 
-# Retrieve the end time of the "Demographic questions" event (i.e. directly before the actual experiment)
+# Retrieve the end time of the "Demographic questions" (directly before the actual experiment)
 time_start <- data_raw %>% filter(sender == "Demographic_questions") %>% pull(time_end)
 
 # Compute the difference between the two and convert from ms to s to min
 (time_task <- (time_end - time_start) / 1000 / 60)
 
-#############################################################
-## - How many participants responded correctly on the Quality Control Question?
-#############################################################
+###############################################################################
+## -  How many participants responded correctly on the Quality Control Question?
+###############################################################################
 
 # Retrieve participants' answer to the question "QC" (quality check)
 (qual_check <- data_raw %>% filter(sender == "QC") %>% pull(German))
 
-# Check how many of them respneded (correctly) with "Chicago".
+# Check how many of them responded (correctly) with "Chicago".
 (qual_check == "Chicago") %>% sum()
 
-#############################################################
-## - How many errors did participants make?
-#############################################################
+###############################################################################
+## -  How many errors did participants make?
+###############################################################################
 
+# Create a new column with participant IDs
+data_raw %<>% fill(url.srid, .direction = "down") %>% mutate(id = url.srid)
 
+# How many participants do we have?
+(n <- n_distinct(data_raw$url.srid))
 
-# create participant IDs (probably not the most elegant code. But it works..)
-nSubs<-3 # how many participants? | Important: Specify number of participants, change if needed!!
-# no user input required from here to end of excercise
-dim(data_raw)->dd #how many rows in total?
-matrix(which(data_raw$sender %in% "Welcome"))->w #get row indices of "Welcome"s
-dd[1]->w[nSubs+1] #add number of rows to w
+# Do the job
+(data_raw %>%
+    # Filter out practise trials
+    filter(is.na(practice)) %>% 
+    # Filter only the acutal reactions
+    filter(response %in% c("positive", "negative")) %>% 
+    # Count cases of correct, depending on ID
+    count(correct, id) -> num_errors)
 
-data_raw$id<-0 #create new column ID
-for (i in c(1:nSubs-1)){
-  if (i==0){data_raw$id[w[i+1]:w[i+2]]<-(i+1)}
-  else {data_raw$id[(w[i+1]+1):w[i+2]]<-(i+1)}
-}
+###############################################################################
+## -  How many outliers were there?
+###############################################################################
 
-# do the job
-data_raw %>%
-  #filter practise trials
+# Create new columns for our idenpendent variables...
+data_raw %<>% mutate(
+  # ... namely which type of agent was presented ...
+  agent = case_when(
+    str_detect(image, "human_") ~ "human",
+    str_detect(image, "robot_") ~ "robot"
+  ) %>% factor(levels = c("human", "robot")),
+  # ... and if their eyes were open or closed.
+  gaze = case_when(
+    str_detect(image, "open") ~ "open",
+    str_detect(image, "closed") ~ "closed"
+  ) %>% factor(levels = c("open", "closed"))
+)
+
+# Do the job
+(data_raw %>%
+  # Filter out practise trials
   filter(is.na(practice)) %>% 
-  #filter only reactions
-  filter(correctResponse=="positive"|response=="negative") %>% 
-  # count cases of correct, depending on ID
-  count(correct,id) -> errors
-
-#############################################################
-## -	How many outliers were there?
-#############################################################
-
-# recode primes into factors using recode_factos(), first argument: variable to recode, followed by list of recodings, explicit recoding of all robots (or open eyes), humans (or eyes closed) are recoded by default
-data_raw$agent <- recode_factor(data_raw$image,robot_open_1.jpg = "robot",robot_open_2.jpg = "robot",robot_open_3.jpg = "robot",robot_closed_1.jpg = "robot",robot_closed_2.jpg = "robot",robot_closed_3.jpg = "robot",.default = "human")
-data_raw$gaze <- recode_factor(data_raw$image,robot_open_1.jpg = "open",robot_open_2.jpg = "open",robot_open_3.jpg = "open",human_open_1.jpg = "open",human_open_2.jpg = "open",human_open_3.jpg = "open",.default = "closed")
-
-data_raw %>% 
-  #filter out practise trials
-  filter(is.na(practice)) %>% 
-  #filter only targets
-  filter(correctResponse=="positive"|response=="negative") %>% 
-  # filter only correct answers
-  filter(correct=="TRUE") %>% 
-  # group by IVs
-  group_by(id,agent,gaze,correctResponse) %>% 
-  # identify outliers (Tukey fences) in each condition
-  summarize(boxplot.stats(duration)$out)  %>% 
-  # ungroup
+  # Filter only target trials
+  filter(response %in% c("positive", "negative")) %>% 
+  # Filter only correct responses
+  filter(correct == "TRUE") %>% 
+  # Group by participants and independent variables
+  group_by(id, agent, gaze, correctResponse) %>% 
+  # Identify outliers (Tukey fences) in each condition
+  summarize(boxplot.stats(duration)$out) %>% 
+  # Ungroup
   ungroup() %>% 
-  # now we count rows per participant, ie how many ouliers per participant across conditions 
-   count(id) -> numOutlier
+  # Now we count rows per participant, i.e. how many ouliers per participant across conditions 
+  count(id, name = "outliers") -> num_outliers)
 
-##############################################################
-# Excercise 2: Prepare ANOVA RT overview [done!]
-#############################################################
+###################################################################################################
+# EXERCISE 2: Prepare ANOVA RT overview
+###################################################################################################
 
-#############################################################
-## -	Could you walk us through the ANOVA results?
-#############################################################  
+###############################################################################
+## -  Could you walk us through the ANOVA results?
+###############################################################################
 
-#SET FACTORS FOR ANOVA
-data_raw$agent<- factor(data_raw$agent, levels = c("human", "robot")) # we already created agent above
-data_raw$gaze <- factor(data_raw$gaze, levels = c("open", "closed")) # we already created gaze above
-data_raw$Word_Valence <- recode_factor(data_raw$response,negative = "negative",positive = "positive")
-data_raw$Word_Valence <- factor(data_raw$Word_Valence, levels = c("positive", "negative"))
+# We already have factorized columns for agent and gaze.
+# But we also need one for the valence of the target word.
+data_raw %<>% mutate(word_valence = factor(response, levels = c("positive", "negative")))
 
+# Create a new subset of the data
 data_raw %>% 
-  #filter out practise trials
+  # Filter out practise trials
   filter(is.na(practice)) %>% 
-  #filter only targets
-  filter(correctResponse=="positive"|response=="negative") %>% 
-  # filter only correct answers
-  filter(correct=="TRUE") -> data1
+  # Filter only target trials
+  filter(response %in% c("positive", "negative")) %>% 
+  # Filter only correct answers
+  filter(correct == "TRUE") -> data_1
 
-#RUN ANALYSIS OF VARIANCE 
-# Compute the analysis of variance Agent*Gaze*Word_Valence
-res.aov <- aov(duration ~ agent*gaze*Word_Valence, 
-               data = data1)
-# Summary of the analysis
-summary(res.aov)
+# Run analysis of variance (ANOVA) for agent x gaze x word_valence
+mod_1 <- aov_ez(
+  id = "id",
+  dv = "duration",
+  within = c("agent", "gaze", "word_valence"),
+  data = data_1,
+  fun_aggregate = mean
+)
 
-#############################################################
-## -	-	Could you walk us through the post-hoc tests?
-#############################################################  
+# Take a look at the results
+summary(mod_1)
 
-# we ran ANOVA in the last step, just do tukey tests:
-TukeyHSD(res.aov)
+###############################################################################
+## -  Could you walk us through the post-hoc tests?
+###############################################################################
 
-#############################################################
-## - Could you generate a table with means?
-#############################################################    
+# Compute follow-up pair-wise tests using the emmeans package
+means_mod_1 <- emmeans(mod_1, specs = pairwise ~ agent * gaze * word_valence)
 
-group_by(data1, agent, gaze, Word_Valence) %>%
-  summarise(
-    count = n(),
-    RT = mean(duration, na.rm = TRUE),
-    sd = sd(duration, na.rm = TRUE),
-    sem = sd(duration)/sqrt(length(duration))
-  )->rob_means
+# Retrieve means for all combinations of factor levels (useful e.g. for plotting)
+means_mod_1$emmeans
 
+# Retrive contrasts between all combinations of factor levels
+means_mod_1$contrasts
 
-#############################################################
-## -	Could you plot a graph depicting the results and walk us through the plot?
-#############################################################   
-# PLOT MEANS
+###############################################################################
+## -  Could you generate a table with means from the raw data?
+###############################################################################
 
-# specifiy what to plot, aes defines aesthetics: "group" connects the lines, "color" prints different colors and creates a legend
-ggplot(rob_means, aes(x=gaze, y=RT,color=agent,group=agent)) + 
-  # do the line plot
-  geom_line()+ 
-  # put dots at the end of the lines - looks better
-  geom_point() +  
-  # and add the error bars: specify a range (mean +-sem)
-  geom_errorbar(aes(ymin=RT-sem, ymax=RT+sem), width=.2,position=position_dodge(0.05))  + 
-  # and make sure that positive an negative words get their panel each
-  facet_grid( ~ Word_Valence)
-# flow: tell r to make a plot, specify geometry, the + binds different parts together that are actually superimposed one after the other, the last line is something like "all of the above, but in two panels"
+# This requires two steps of aggregation
+(data_1 %>%
+   # Aggregate within participants across trials from the same condition
+   group_by(id, agent, gaze, word_valence) %>%
+   summarise(duration = mean(duration, na.rm = TRUE)) %>%
+   # Aggregate across participants
+   group_by(agent, gaze, word_valence) %>%
+   summarise(
+     RT = mean(duration, na.rm = TRUE),
+     sd = sd(duration, na.rm = TRUE),
+     SE = sd(duration) / sqrt(n)
+   ) -> means_raw_1)
 
-##############################################################
-# Excercise 3: Prepare ANOVA accuracy overview [not done - adapt from excercise 2]
-#############################################################
+###############################################################################
+## -  Could you plot a graph depicting the results and walk us through the plot?
+###############################################################################
 
-##############################################################
-# Excercise 4: Intentionality analysis + plot by Gaze & Agent [still missing]
-#############################################################
+# Tell R what to plot and what are our variables
+means_raw_1 %>% ggplot(aes(x = gaze, y = RT, color = agent, group = agent)) +
+  # Create separate subplots for the two types of word valence
+  facet_grid( ~ word_valence) +
+  # Add lines, dots, and errorbars (SEs)
+  geom_line(position = position_dodge(width = 0.2)) +
+  geom_point(position = position_dodge(width = 0.2)) +
+  geom_errorbar(aes(ymin= RT - SE, ymax = RT + SE), width = 0.2, position = position_dodge(width = 0.2)) +
+  # Plot a wider range on the y-axis (500-1000 ms)
+  coord_cartesian(ylim = c(500, 1000)) +
+  # Some styling
+  theme_classic()
 
-#############################################################
-#-	How did you evaluate intentionality of humans and robots?
-#############################################################
+# Short explanation: The first two lines tell R to make a plot with certain "aesthetics", i.e. our dependent variable
+# (reaction time) on the y-axis, our first independent variable (gaze) on the x-axis, seperate colors for our second
+# independent variable (agent), and two seperate subplots for our third independent variable (word valence). We then
+# add some elements we want to show: Points (means), errorbars (SEs), and lines connecting dots belonging to the same
+# condition. The final two lines are just for styling the plot, i.e. adjusting the range of the y-axis and setting a
+# more APA style conform theme.
 
-#############################################################
-#  -	How did you evaluate agency of humans and robots?
-#############################################################
+###################################################################################################
+# EXERCISE 3: Prepare ANOVA accuracy overview
+###################################################################################################
 
-#############################################################
-#  -	How did you evaluate intentionality eyes open eyes closed human robot?
-#############################################################
+###############################################################################
+## -  Could you walk us through the ANOVA results?
+###############################################################################
 
-#############################################################
-#  -	How did you evaluate agency eyes open eyes closed human robot? 
-#############################################################
+# We already have factorized columns for agent and gaze.
+# But we also need one for the valence of the target word.
+data_raw %<>% mutate(word_valence = factor(response, levels = c("positive", "negative")))
 
-#############################################################
-#  -	Table + plot as an overview
-#############################################################
-
-
-##############################################################
-# Excercise 5: Attitudes towards robots + Experience with Robots [partially done]
-#############################################################
-
-#############################################################
-#-	What are the dimensions to evaluate ATAI?  (Acceptance, Fear)
-#############################################################
-
-#############################################################
-#-	-	How did you score on Acceptance towards AI and Fear towards AI?
-#############################################################
+# Create a new subset of the data
 data_raw %>% 
-  #filter questionnaire trials
-  filter(sender=="AttitudesAI") %>% 
-  # select only relevant columns
-  select(contains("KI")) -> AttAi
+  # Filter out practise trials
+  filter(is.na(practice)) %>% 
+  # Filter only target trials
+  filter(response %in% c("positive", "negative")) %>%
+  # Convert accuracy (correct or not) to a numeric variable
+  mutate(correct = recode(correct, "TRUE" = 1, "FALSE" = 0)) -> data_2
 
-AttAi$fear <- as.numeric(AttAi[,1])+as.numeric(AttAi[,3]) + +as.numeric(AttAi[,5])
-AttAi$acceptance <- as.numeric(AttAi[,2])+as.numeric(AttAi[,4]) 
+# Run analysis of variance (ANOVA) for agent x gaze x word_valence
+mod_2 <- aov_ez(
+  id = "id",
+  dv = "correct",
+  within = c("agent", "gaze", "word_valence"),
+  data = data_2,
+  fun_aggregate = mean
+)
 
-#############################################################
-#-	Can you prepare a table with the scores & generate a plot to visually present the data? 
-#############################################################
+# Take a look at the results
+summary(mod_2)
 
-#############################################################
-##  -	Can you present how the group rated experience with robots?
-#############################################################   
+###############################################################################
+## -  Could you walk us through the post-hoc tests?
+###############################################################################
 
-data_raw %>% 
-  #filter questionnaire trials
-  filter(sender=="Experience with Robots") %>% 
-  # select only relevant columns
-  select(contains("German"))
+# Compute follow-up pair-wise tests using the emmeans package
+means_mod_2 <- emmeans(mod_2, specs = pairwise ~ agent * gaze * word_valence)
 
+# Retrieve means for all combinations of factor levels (useful e.g. for plotting)
+means_mod_2$emmeans
 
-#############################################################
+# Retrive contrasts between all combinations of factor levels
+means_mod_2$contrasts
+
+###############################################################################
+## -  Could you generate a table with means from the raw data?
+###############################################################################
+
+# This requires two steps of aggregation
+(data_2 %>%
+   # Aggregate within participants across trials from the same condition
+   group_by(id, agent, gaze, word_valence) %>%
+   summarise(correct = mean(correct, na.rm = TRUE)) %>%
+   # Aggregate across participants
+   group_by(agent, gaze, word_valence) %>%
+   summarise(
+     accuracy = mean(correct, na.rm = TRUE),
+     sd = sd(correct, na.rm = TRUE),
+     SE = sd(correct) / sqrt(n)
+   ) -> means_raw)
+
+###############################################################################
+## -  Could you plot a graph depicting the results and walk us through the plot?
+###############################################################################
+
+# Tell R what to plot and what are our variables
+means_raw %>% ggplot(aes(x = gaze, y = accuracy, color = agent, group = agent)) +
+  # Create separate subplots for the two types of word valence
+  facet_grid( ~ word_valence) +
+  # Add dots, errorbars, and lines
+  geom_point(position = position_dodge(width = 0.2)) +  
+  geom_errorbar(aes(ymin = accuracy - SE, ymax = accuracy + SE), width = 0.2, position = position_dodge(width = 0.2)) + 
+  geom_line(position = position_dodge(width = 0.2)) +
+  # Plot the entire range from 0 to 100 percent
+  coord_cartesian(ylim = c(0, 1)) +
+  # Some styling
+  theme_classic()
+
+# Short explanation: The first two lines tell R to make a plot with certain "aesthetics", i.e. our dependent variable
+# (accuracy) on the y-axis, our first independent variable (gaze) on the x-axis, seperate colors for our second
+# independent variable (agent), and two seperate subplots for our third independent variable (word valence). We then
+# add some elements we want to show: Points (means), errorbars (SEs), and lines connecting dots belonging to the same
+# condition. The final two lines are just for styling the plot, i.e. adjusting the range of the y-axis and setting a
+# more APA style conform theme.
+
+###################################################################################################
+# EXERCISE 4: Intentionality analysis + plot by Gaze & Agent [still missing]
+###################################################################################################
+
+###############################################################################
+## -  How did you evaluate intentionality of humans and robots?
+###############################################################################
+
+test <- data_raw %>% filter(!is.na(intentional))
+# How do we know the conditions???
+
+###############################################################################
+## -  How did you evaluate agency of humans and robots?
+###############################################################################
+
+###############################################################################
+## -  How did you evaluate intentionality eyes open eyes closed human robot?
+###############################################################################
+
+###############################################################################
+## -  How did you evaluate agency eyes open eyes closed human robot? 
+###############################################################################
+
+###############################################################################
+## -  Table + plot as an overview
+###############################################################################
+
+###################################################################################################
+# EXERCISE 5: Attitudes towards robots + experience with robots
+###################################################################################################
+
+###############################################################################
+## -  What are the dimensions to evaluate ATAI?  (Acceptance, Fear)
+###############################################################################
+
+# Take a look at the following paper: Sindermann, C., Sha, P., Zhou, M., Wernicke, J., Schmitt, H. S., Li, M., ... &
+# Montag, C. (2020). Assessing the Attitude Towards Artificial Intelligence: Introduction of a Short Measure in German,
+# Chinese, and English Language. KI-Künstliche Intelligenz, 1-10. https://doi.org/10.1007/s13218-020-00689-0
+
+###############################################################################
+## -  How did participants score on Acceptance towards AI and Fear towards AI?
+###############################################################################
+
+# Start with the raw data
+(data_raw %>%
+   # Filter the relevant questionnaire trials
+   filter(sender == "AttitudesAI") %>%
+   # Select only the relevant columns
+   select(contains("KI")) %>%
+   # Convert the relevant variables to numeric
+   mutate(across(.fns = as.numeric)) -> att_ai_raw)
+
+###############################################################################
+## -  Can you prepare a table with the scores & generate a plot to visually present the data? 
+###############################################################################
+
+# Compute mean scores for each participant
+(att_ai_raw %>% transmute(
+  fear = (angstKI + ZerstoerungKI + ArbeitslosigkeitKI) / 3,
+  acceptance = (vetrauenKI + BereicherungKI) / 2
+) -> att_ai)
+
+# Means accross participants
+mean(att_ai$fear)
+mean(att_ai$acceptance)
+
+# Scatterplot (helps to see the relationship between fear and acceptance)
+att_ai %>% ggplot(aes(x = fear, y = acceptance)) +
+  geom_point() +
+  coord_cartesian(xlim = c(0, 10), ylim = c(0, 10)) +
+  theme_bw()
+
+# Density plot (helps to see how the scores are distributed)
+att_ai %>% ggplot() +
+  geom_density(aes(x = fear), fill = "red", alpha = 0.5) +
+  geom_density(aes(x = acceptance), fill = "green", alpha = 0.5) +
+  coord_cartesian(xlim = c(0, 10)) +
+  theme_bw()
+
+###############################################################################
+## -  Can you present how the group rated experience with robots?
+###############################################################################
+
+# Start with the raw data
+data_raw %>%
+  # Filter questionnaire trials
+  filter(sender == "Experience with Robots") %>% 
+  # Select only relevant column
+  mutate(experience = factor(German, levels = c("keine", "wenige", "mehrere", "erheblich"))) %>%
+  # Create bar chart
+  ggplot(aes(x = experience)) +
+  stat_count() +
+  scale_x_discrete(drop = FALSE) +
+  theme_bw()
+
+###############################################################################
 ## -	Assess reliability
-#############################################################  
-#require(ltm)
-# reuse AttAi froom above
-  AttAi[,c(2,4)] %>% 
-    # Item 2 and 4 are acceptance scale
-  cronbach.alpha(standardized = TRUE) -> acceptance # compute standardized alpha
-   # Item 1 3 5 are fear scale
-  AttAi[,c(0,2,4)] %>% 
-    cronbach.alpha(standardized = TRUE) -> fear # compute standardized alpha
-  
-  
+###############################################################################
 
-  
+# The ltm package provides a quick glance at the standardized alpha. First row is for the "fear" subscale, second
+# row is for the "acceptance" subscale.
+att_ai_raw %>% select(angstKI, ZerstoerungKI, ArbeitslosigkeitKI) %>% cronbach.alpha(standardized = TRUE)
+att_ai_raw %>% select(vetrauenKI, BereicherungKI) %>% cronbach.alpha(standardized = TRUE)
+
+# The psych package gives further information for Diagnostik aficionados. Again, first row is for the "fear" subscale,
+# second row is for the "acceptance" subscale.
+att_ai_raw %>% select(angstKI, ZerstoerungKI, ArbeitslosigkeitKI) %>% alpha()
+att_ai_raw %>% select(vetrauenKI, BereicherungKI) %>% alpha()
+
