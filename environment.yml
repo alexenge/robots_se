@@ -1,0 +1,14 @@
+channels:
+  - conda-forge
+dependencies:
+  - r-base=4.0.2
+  - r-pacman
+  - r-jsonlite
+  - r-jsonlite
+  - r-afex
+  - r-emmeans
+  - r-tidyverse
+  - r-magrittr
+  - r-psych
+  
+  
