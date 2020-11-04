@@ -6,7 +6,7 @@
 install.packages("pacman")
 
 # Install/load all other necessary packages (this may take a while when run for the first time)
-pacman::p_load("jsonlite", "afex", "emmeans", "ltm", "tidyverse", "magrittr", "psych")
+pacman::p_load("jsonlite", "afex", "emmeans", "knitr", "tidyverse", "magrittr", "psych")
 
 # Read the text file from JATOS ...
 #read_file("stuff/jatos_results_20201102154453") %>%
@@ -277,38 +277,121 @@ means_raw %>% ggplot(aes(x = gaze, y = accuracy, color = agent, group = agent)) 
 # more APA style conform theme.
 
 ###################################################################################################
-# EXERCISE 4: Intentionality analysis + plot by Gaze & Agent [still missing]
+# EXERCISE 4: Intentionality analysis + plot by Gaze & Agent
 ###################################################################################################
 
 ###############################################################################
 ## -  How did you evaluate intentionality of humans and robots?
 ###############################################################################
 
-test <- data_raw %>% filter(!is.na(intentional))
-# How do we know the conditions???
+# Start with the raw data
+(data_raw %>%
+   # Subset only the relevant rating trials
+   filter(!is.na(intentional)) %>%
+   # Create new columns for our independent variables
+   mutate(
+     ratings_agent = ifelse(str_detect(sender, "h"), "human", "robot"),
+     ratings_gaze = ifelse(str_detect(sender, "o"), "open", "closed")
+   ) %>%
+   # Convert ratings to numeric
+   mutate(across(c(intentional, selb, rational, intelligent), .fns = as.numeric)) %>%
+   # Select only the relevant variables and save as new data frame
+   select(id, ratings_agent, ratings_gaze, intentional, selb, rational, intelligent) -> data_ratings)
+
+# Compute mean intentionality ratings by agent
+(data_ratings %>%
+    # Average within participants
+    group_by(id, ratings_agent) %>%
+    summarise(avg = mean(intentional)) -> ratings_int)
+
+# Grand-average across participants
+ratings_int %>%
+  group_by(ratings_agent) %>%
+  summarise(gavg = mean(avg), sd = sd(avg), se = sd(avg) / sqrt(n))
 
 ###############################################################################
 ## -  How did you evaluate agency of humans and robots?
 ###############################################################################
 
+# Compute mean agency ratings by agent
+(data_ratings %>%
+   # Average within participants
+   group_by(id, ratings_agent) %>%
+   summarise(avg = mean(selb)) -> ratings_selb)
+
+# Grand-average across participants
+ratings_selb %>%
+  group_by(ratings_agent) %>%
+  summarise(gavg = mean(avg), sd = sd(avg), se = sd(avg) / sqrt(n))
+
 ###############################################################################
 ## -  How did you evaluate intentionality eyes open eyes closed human robot?
 ###############################################################################
+
+# We do the same as above, but add gaze as an additional factor
+(data_ratings %>%
+   # Average within participants
+   group_by(id, ratings_agent, ratings_gaze) %>%
+   summarise(avg = mean(intentional)) -> ratings_int_gaze)
+
+# Grand-average across participants
+ratings_int_gaze %>%
+  group_by(ratings_agent, ratings_gaze) %>%
+  summarise(gavg = mean(avg), sd = sd(avg), se = sd(avg) / sqrt(n))
 
 ###############################################################################
 ## -  How did you evaluate agency eyes open eyes closed human robot? 
 ###############################################################################
 
+# And we do the same for agency instead of intentionality
+(data_ratings %>%
+   # Average within participants
+   group_by(id, ratings_agent, ratings_gaze) %>%
+   summarise(avg = mean(selb)) -> ratings_selb_gaze)
+
+# Grand-average across participants
+ratings_selb_gaze %>%
+  group_by(ratings_agent, ratings_gaze) %>%
+  summarise(gavg = mean(avg), sd = sd(avg), se = sd(avg) / sqrt(n))
+
 ###############################################################################
 ## -  Table + plot as an overview
 ###############################################################################
+
+# Bind intentionality and agency ratings together (column-wise)
+ratings <- bind_rows("intentionality" = ratings_int_gaze, "agency" = ratings_selb_gaze, .id = "rating")
+
+# Create a table
+ratings %>%
+  # Average across participants
+  group_by("Rating" = rating, "Agent" = ratings_agent, "Eyegaze" = ratings_gaze) %>%
+  summarise(
+    "Average rating" = mean(avg),
+    "SD" = sd(avg),
+    "SE" = sd(avg) / sqrt(n)
+  ) %>%
+  # Prettier table output with knitr package
+  kable(digits = 2)
+
+# Create a plot
+ratings %>%
+  # Create a plot with the ratings on the y-axis, gaze on the x-axis, and different colors for different agents
+  ggplot(aes(x = ratings_gaze, y = avg, color = ratings_agent, group = ratings_agent)) +
+  # Create two separate subplots for agency and intentionality ratings
+  facet_wrap(~ rating) +
+  # Add individual data points (one point is one participant)
+  geom_point(position = position_jitterdodge(dodge.width = 0.8)) +
+  # Add summary statistics (mean and standard errors across participants)
+  stat_summary(fun.data = "mean_se", position = position_dodge(width = 0.8)) +
+  # Styling
+  theme_bw()
 
 ###################################################################################################
 # EXERCISE 5: Attitudes towards robots + experience with robots
 ###################################################################################################
 
 ###############################################################################
-## -  What are the dimensions to evaluate ATAI?  (Acceptance, Fear)
+## -  What are the dimensions to evaluate ATAI?
 ###############################################################################
 
 # Take a look at the following paper: Sindermann, C., Sha, P., Zhou, M., Wernicke, J., Schmitt, H. S., Li, M., ... &
@@ -350,9 +433,11 @@ att_ai %>% ggplot(aes(x = fear, y = acceptance)) +
 
 # Density plot (helps to see how the scores are distributed)
 att_ai %>% ggplot() +
-  geom_density(aes(x = fear), fill = "red", alpha = 0.5) +
-  geom_density(aes(x = acceptance), fill = "green", alpha = 0.5) +
+  geom_density(aes(x = fear, fill = "fear"), alpha = 0.5) +
+  geom_density(aes(x = acceptance, fill = "acceptance"), alpha = 0.5) +
+  scale_fill_manual(values = c(fear = "red", acceptance = "green")) +
   coord_cartesian(xlim = c(0, 10)) +
+  xlab("rating") +
   theme_bw()
 
 ###############################################################################
@@ -375,13 +460,9 @@ data_raw %>%
 ## -	Assess reliability
 ###############################################################################
 
-# The ltm package provides a quick glance at the standardized alpha. First row is for the "fear" subscale, second
-# row is for the "acceptance" subscale.
-att_ai_raw %>% select(angstKI, ZerstoerungKI, ArbeitslosigkeitKI) %>% cronbach.alpha(standardized = TRUE)
-att_ai_raw %>% select(vetrauenKI, BereicherungKI) %>% cronbach.alpha(standardized = TRUE)
-
-# The psych package gives further information for Diagnostik aficionados. Again, first row is for the "fear" subscale,
-# second row is for the "acceptance" subscale.
+# Cronbach's alpha for the "fear" subscale of the ATAI
 att_ai_raw %>% select(angstKI, ZerstoerungKI, ArbeitslosigkeitKI) %>% alpha()
+
+# Cronbach's alpha for the "acceptance" subscale of the ATAI
 att_ai_raw %>% select(vetrauenKI, BereicherungKI) %>% alpha()
 

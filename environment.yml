@@ -7,6 +7,7 @@ dependencies:
   - r-jsonlite
   - r-afex
   - r-emmeans
+  - r-knitr
   - r-tidyverse
   - r-magrittr
   - r-psych
