@@ -2,14 +2,9 @@ channels:
   - conda-forge
 dependencies:
   - r-base=3.6
-  - r-pacman
   - r-jsonlite
-  - r-jsonlite
-  - r-afex
-  - r-emmeans
-  - r-knitr
   - r-tidyverse
   - r-magrittr
+  - r-ez
+  - r-emmeans
   - r-psych
-  
-  
