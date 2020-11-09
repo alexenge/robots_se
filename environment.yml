@@ -7,4 +7,5 @@ dependencies:
   - r-magrittr
   - r-ez
   - r-emmeans
+  - r-knitr
   - r-psych

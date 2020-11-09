@@ -59,10 +59,14 @@ dat_all %<>% fill(url.srid, .direction = "down") %>% rename(id = url.srid)
 # actual experiment.
 
 # Retrieve the end time of the "End of task" event (i.e. the end of the actual experiment)
-time_end <- dat_all %>% filter(sender == "End of Task") %>% pull(time_end)
+time_end <- dat_all %>%
+  filter(sender == "End of Task") %>%
+  pull(time_end)
 
 # Retrieve the end time of the "Demographic questions" (directly before the actual experiment)
-time_start <- dat_all %>% filter(sender == "Demographic_questions") %>% pull(time_end)
+time_start <- dat_all %>%
+  filter(sender == "Demographic_questions") %>%
+  pull(time_end)
 
 # Compute the difference between the two and convert from ms to s to min
 (time_task <- (time_end - time_start) / 1000 / 60)
@@ -160,4 +164,3 @@ dat_exp %<>% mutate(
     ungroup() %>%
     # ... and count the number of rows (outliers) per participant
     count(id, name = "outliers") -> outliers)
-

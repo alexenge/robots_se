@@ -105,9 +105,9 @@ dat_exp %>% count(id, agent, gaze, valence)
 
 # Start with the experimental data...
 (dat_exp %>%
-   # ... and compute by-participant averages for each condition
-   group_by(id, agent, gaze, valence) %>%
-   summarize(RT = mean(duration)) -> dat_avg)
+  # ... and compute by-participant averages for each condition
+  group_by(id, agent, gaze, valence) %>%
+  summarize(RT = mean(duration)) -> dat_avg)
 
 ###############################################################################
 ## Exercise 2.3: Run a repeat-measures ANOVA on these averaged RTs
@@ -158,7 +158,7 @@ dat_avg %>%
   # ... create a plot and specify the variables for axes and colors...
   ggplot(aes(x = valence, y = RT, color = agent, group = agent)) +
   # ... create two seperate subplots for open and closed eyes...
-  facet_grid(~ gaze) +
+  facet_grid(~gaze) +
   # ... plot grand means (with standard errors) across participants...
   stat_summary(fun.data = mean_se, position = position_dodge(width = 0.2)) +
   # ... also plot some lines connecting these means...
@@ -167,4 +167,3 @@ dat_avg %>%
   coord_cartesian(ylim = c(600, 800)) +
   # ... and apply an APA-conform theme
   theme_classic()
-

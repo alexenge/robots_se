@@ -1,5 +1,5 @@
 ###################################################################################################
-# GROUP 2: ANALYSIS OF ACCURACY
+# GROUP 3: ANALYSIS OF ACCURACY
 ###################################################################################################
 
 ###############################################################################
@@ -106,9 +106,9 @@ dat_exp %>% count(id, agent, gaze, valence)
 
 # Start with the experimental data...
 (dat_exp %>%
-   # ... and compute by-participant averages for each condition
-   group_by(id, agent, gaze, valence) %>%
-   summarize(acc = mean(acc)) -> dat_avg)
+  # ... and compute by-participant averages for each condition
+  group_by(id, agent, gaze, valence) %>%
+  summarize(acc = mean(acc)) -> dat_avg)
 
 ###############################################################################
 ## Exercise 3.3: Run a repeat-measures ANOVA on these averaged accuracies
@@ -124,11 +124,11 @@ dat_exp %>% count(id, agent, gaze, valence)
 ezANOVA(data = dat_avg, dv = acc, wid = id, within = c("agent", "gaze", "valence"))
 
 # Run repeated-measures ANOVA, base R style
-mod <- aov(acc ~ agent * gaze * valence + Error(id/(agent * gaze * valence)), data = dat_avg)
+mod <- aov(acc ~ agent * gaze * valence + Error(id / (agent * gaze * valence)), data = dat_avg)
 summary(mod)
 
 ###############################################################################
-## Exercise 2.4: Perform post-hoc t-tests for the significant factors
+## Exercise 3.4: Perform post-hoc t-tests for the significant factors
 ###############################################################################
 
 # Spoiler alert! In the ANOVA, we find a three-way interaction between agent, gaze, and valence.
@@ -141,7 +141,7 @@ summary(mod)
 emmeans::emmeans(mod, specs = pairwise ~ valence | (agent * gaze))
 
 ###############################################################################
-## Exerciese 2.5: Visualize the results
+## Exerciese 3.5: Visualize the results
 ###############################################################################
 
 # We can use tidyverse's ggplot package to create publication-ready plots - but understanding
@@ -157,7 +157,7 @@ dat_avg %>%
   # ... create a plot and specify the variables for axes and colors...
   ggplot(aes(x = valence, y = acc, color = agent, group = agent)) +
   # ... create two seperate subplots for open and closed eyes...
-  facet_grid(~ gaze) +
+  facet_grid(~gaze) +
   # ... plot grand means (with standard errors) across participants...
   stat_summary(fun.data = mean_se, position = position_dodge(width = 0.2)) +
   # ... also plot some lines connecting these means...
@@ -166,4 +166,3 @@ dat_avg %>%
   coord_cartesian(ylim = c(0.85, 1.0)) +
   # ... and apply an APA-conform theme
   theme_classic()
-
