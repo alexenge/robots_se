@@ -32,12 +32,9 @@ read_jatos <- function(file) {
   )
 }
 
-# These are the URLs of the two raw data files on GitHub...
-c(
-  "https://raw.githubusercontent.com/alexenge/robots_se/master/data/jatos_results_20201108083642",
-  "https://raw.githubusercontent.com/alexenge/robots_se/master/data/jatos_results_20201108083705"
-) %>%
-  # ... which we feed into our custom function...
+# List the file names of our two results files from JATOS...
+list.files("data", pattern = "jatos_results", full.names = TRUE) %>%
+  # ... feed into our custom function...
   map(read_jatos) %>%
   # ... and combine them into a single data set
   bind_rows() -> dat_all
