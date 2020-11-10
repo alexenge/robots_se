@@ -1,131 +1,67 @@
 ###################################################################################################
-# GROUP 3: ANALYSIS OF ACCURACY
+# GROUP 3: ANALYSIS OF ACCURACY DATA
 ###################################################################################################
-
-###############################################################################
-## Exercise 0: Read data into R
-###############################################################################
-
-# Install the relevant packages (you only need to do this once)
-install.packages(c("jsonlite", "tidyverse", "magrittr", "ez", "emmeans"))
 
 # Load the relevant packages
 library(tidyverse)
-library(magrittr)
 library(ez)
 library(emmeans)
 
-# Tell R to always print up to 50 lines of results
-options(tibble.print_max = 50)
+###############################################################################
+## Exercise 3.1: Read the data into R
+###############################################################################
 
-# Here we define a cusstom function for reading the raw data from the files that are created
-# by JATOS (the online platform where we have run our experiment). These are "JSON" files, which
-# need some wrangling so R can understand them properly. You don't need to understand what is
-# happening here.
-read_jatos <- function(file) {
-  suppressMessages(require(jsonlite))
-  suppressMessages(
-    read_file(file) %>%
-      str_split("\n") %>% first() %>%
-      discard(function(x) x == "") %>%
-      map_dfr(fromJSON, flatten = TRUE) %>%
-      as_tibble()
-  )
-}
+# Start by familiarizing yourself with information stored in the file "dat_exp.csv". You can open
+# this file using a text editor (Editor/Notepad on Windows, TextEdit on Mac) or in a spreadsheet
+# software (Microsoft Excel or Apple Numbers). Then, try to load the data into R, e.g. using the
+# read_csv() function from the tidyverse.
 
-# List the file names of our two results files from JATOS...
-list.files("data", pattern = "jatos_results", full.names = TRUE) %>%
-  # ... feed into our custom function...
-  map(read_jatos) %>%
-  # ... and combine them into a single data set
-  bind_rows() -> dat_all
-
-# Create a new column with participant IDs
-dat_all %<>% fill(url.srid, .direction = "down") %>% mutate(id = factor(url.srid))
+# Read the main experimental data set
+read_csv("data/dat_exp.csv") -> dat_exp
 
 # How many participants do we have?
-(n <- n_distinct(dat_all$id))
+(dat_exp %>% pull(id) %>% n_distinct() -> n)
 
 ###############################################################################
-## Exercise 3.1: Extract the experimental trials and code their condition
+## Exercise 3.2: Compute the average accuracies for each participant in each condition
 ###############################################################################
 
-# Thus far, our data set ("dat_all") contains a row for every event that has happened on the
-# screen, not just the main experiment. Therefore, we first need to extract the relevant trials,
-# which are the only rows whose which have the values "positive" or "negative" in the column
-# "correctResponse". We also need to exlucde the practice trials, which we can do by selecting
-# only trials where the column "practice" is NA (not available). Finally, we need to convert
-# the information of the response of the participant was correct or not (stored in the column
-# "correct") to a numeric variable (e.g. 1 and 0).
+# Try to make out which column codes the participant IDs and which columns code our experimental
+# factors (remember: There are 3 of them!). Use the "group_by()" function from the tidyverse to
+# group your data by all of these columns. Then, you can compute the average accuracy (column
+# "correct") for each of these groups of trials, using the "summarize()" function.
 
-# Start with the raw data...
-dat_all %>%
-  # ... filter only experimental trials...
-  filter(correctResponse %in% c("positive", "negative")) %>%
-  # ... filter out practise trials...
-  filter(is.na(practice)) %>%
-  # ... and convert accuracy (correct or not) to a numeric variable
-  mutate(acc = recode(correct, "TRUE" = 1, "FALSE" = 0)) -> dat_exp
-
-# Next, we need to code the experimental conditions (independent variables) for our trials.
-# We do this by extracting the type of agent (human or robot) and eye gaze (open or closed) from
-# The filename of the image which was shown during the trial (column "image"). The information
-# for our third independent variable (word valence, positive or negative) is already stored in
-# the column "correctResponse".
-
-# Create new columns for our idenpendent variables...
-dat_exp %<>% mutate(
-  # ... namely which type of agent was presented...
-  agent = case_when(
-    str_detect(image, "human_") ~ "human",
-    str_detect(image, "robot_") ~ "robot"
-  ) %>% factor(levels = c("human", "robot")),
-  # ... if their eyes were open or closed...
-  gaze = case_when(
-    str_detect(image, "open") ~ "open",
-    str_detect(image, "closed") ~ "closed"
-  ) %>% factor(levels = c("open", "closed")),
-  # ... and if the word valence was positive or negative
-  valence = correctResponse %>%
-    factor(levels = c("positive", "negative"))
-)
-
-# Let's get an overview over the number of trials per participants in each condition
-dat_exp %>% count(id, agent, gaze, valence)
-
-###############################################################################
-## Exercise 3.2: Compute by-participant condition averages of accuracy
-###############################################################################
-
-# To do this, you need to group the data by the relevant grouping variables (participant id and
-# our three independet variables) and compute the mean accuracy for each group. of trials. In the
-# tidyverse, this averaging is done via the "group_by" and "summarize" commands.
-
-# Start with the experimental data...
+# Start with the correct trials...
 (dat_exp %>%
-  # ... and compute by-participant averages for each condition
-  group_by(id, agent, gaze, valence) %>%
-  summarize(acc = mean(acc)) -> dat_avg)
+   # ... and group by participant IDs and conditions...
+   group_by(id, agent, gaze, valence) %>%
+   # ... and compute the mean accuracy for each group of trials
+   summarize(avg_correct = mean(correct)) -> dat_avg)
 
 ###############################################################################
 ## Exercise 3.3: Run a repeat-measures ANOVA on these averaged accuracies
 ###############################################################################
 
-# There's multiple ways to do this in R, but the most intuitive one is probably the "ezANOVA"
-# function from the ez package. We just need to specify the names of our data set, our
-# dependent variables, and our within-participant indepedent variables. Here we also use the
-# base R function "aov", were we need to be a bit more explicit about the error term for our
-# within design. Note that both lead to the same results.
+# There's multiple ways to do ANOVAS in R, but the most intuitive one is the "ezANOVA" function
+# from the ez package. We just need to specify the name of our data set, and the column  our names
+# of our participant IDs (argument "wid"), our dependent variable (argument "dv"), and our within-
+# participant indepedent variables (argument "within").
 
 # Run repeated-measures ANOVA, ez style
-ezANOVA(data = dat_avg, dv = acc, wid = id, within = c("agent", "gaze", "valence"))
+ezANOVA(data = dat_avg, dv = avg_correct, wid = id, within = c("agent", "gaze", "valence"))
+
+# You can also use the base R function "aov", were you need to be a bit more explicit about the
+# error term for our within-participants design. Note that both ways lead to the same result.
 
 # Run repeated-measures ANOVA, base R style
-mod <- aov(acc ~ agent * gaze * valence + Error(id / (agent * gaze * valence)), data = dat_avg)
+mod <- aov(
+  avg_correct ~ agent * gaze * valence + Error(factor(id) / (agent * gaze * valence)),
+  data = dat_avg
+)
 summary(mod)
 
 ###############################################################################
-## Exercise 3.4: Perform post-hoc t-tests for the significant factors
+## Exercise 3.4: Perform post-hoc t-tests for the significant interactions
 ###############################################################################
 
 # Spoiler alert! In the ANOVA, we find a three-way interaction between agent, gaze, and valence.
@@ -133,26 +69,30 @@ summary(mod)
 # contrasts. For example, we may be interested in the difference between positive and negative
 # words seperately for humans with open eyes, robots with open eyes, humans with closed eyes, and
 # robots with closed eyes. This can be specified in emmeans using a pair-wise contrast of valence
-# within ("|") the different combinations of agent and gaze.
+# within the different combinations of agent and gaze.
 
+# Compute pairwise follow-up contrasts of word valence within different levels of agents and gaze
 emmeans::emmeans(mod, specs = pairwise ~ valence | (agent * gaze))
 
+# Which contrast is responsible for observing the three-way interaction? Do you have an idea why
+# this effect may occur?
+
 ###############################################################################
-## Exerciese 3.5: Visualize the results
+## Exercise 3.5: Visualize the results
 ###############################################################################
 
 # We can use tidyverse's ggplot package to create publication-ready plots - but understanding
 # the syntax is rather complicated. You first create an empty ggplot which has some "aesthetics",
-# that specfications for which variables to display on the x-axis (usually one of the IVs), on the
-# y-axis (usually the DV), and in different colors and/or shapes (usually other IVs). Via plus
-# symbols ("+"), we then add layers to the plots which show the actual data (e.g. as dots or
-# or lines (so-called "geoms"). We can also different themes and other aspects of styling and
-# text (e.g. axis labels) to the plot.
+# that is specfications for which variables to display on the x-axis (usually one of the IVs), on
+# the y-axis (usually the DV), and in different colors and/or shapes (usually other IVs). With plus
+# symbols (+), we then add layers to the plots which show the actual data (e.g. dots or or lines
+# (so-called "geoms"). We can also add different themes and other aspects of styling and text (e.g.
+# axis labels) to the plot.
 
 # Start with the averaged data...
 dat_avg %>%
   # ... create a plot and specify the variables for axes and colors...
-  ggplot(aes(x = valence, y = acc, color = agent, group = agent)) +
+  ggplot(aes(x = valence, y = avg_correct, color = agent, group = agent)) +
   # ... create two seperate subplots for open and closed eyes...
   facet_grid(~gaze) +
   # ... plot grand means (with standard errors) across participants...
@@ -163,3 +103,5 @@ dat_avg %>%
   coord_cartesian(ylim = c(0.85, 1.0)) +
   # ... and apply an APA-conform theme
   theme_classic()
+
+# How does this plot fit with your findings from the ANOVA and follow-up contrasts?

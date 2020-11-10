@@ -4,7 +4,6 @@ dependencies:
   - r-base=3.6
   - r-jsonlite
   - r-tidyverse
-  - r-magrittr
   - r-ez
   - r-emmeans
   - r-knitr
