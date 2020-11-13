@@ -113,3 +113,34 @@ dat_avg %>%
   theme_classic()
 
 # How does this plot fit with your findings from the ANOVA and t-tests?
+
+###############################################################################
+## Add-on: Linear mixed effects-model instead of ANOVA
+###############################################################################
+
+# Linear mixed-effects models are an extension of multiple regression and offer an alternative
+# approach to analysing experimental data with some advantages compared to ANOVAs. First, they
+# can analyse data on the level of single trials (instead of by-participant averages), which
+# leads to better statistical power. Second, they take into account the non-indepedence of data
+# points coming from the same items (whereas ANOVA only takes into account the non-independence
+# of data points coming from the same participant). This leads to better control of the Type I 
+# (alpha) error rate.
+
+# Load some new packages
+library(afex)
+library(emmeans)
+
+# Run linear mixed-effects model
+lmm <- lmer_alt(
+  rt ~ agent * gaze * valence + (agent * gaze * valence||id) + (agent * gaze * valence||word),
+  data = dat_exp,
+  check_contrasts = TRUE,
+  control = lmerControl(calc.derivs = FALSE, optimizer = "bobyqa")
+)
+
+# Show ANOVA-style output
+anova(lmm)
+
+# Re-compute the follow-up contrast for valence by agent
+emm_options(lmer.df = "Satterthwaite", lmerTest.limit = Inf)
+emmeans(lmm, specs = pairwise ~ valence|agent)

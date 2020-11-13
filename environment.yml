@@ -8,3 +8,4 @@ dependencies:
   - r-emmeans
   - r-knitr
   - r-psych
+  - r-afex
